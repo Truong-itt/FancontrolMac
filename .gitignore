@@ -1,0 +1,15 @@
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Packaged app (scripts/build.sh moves it to /Applications)
+build/
+
+# Xcode
+*.xcodeproj
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
