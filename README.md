@@ -56,7 +56,8 @@ is remembered across quits.
 The editor has two tabs:
 
 - **Fixed speed**: one field per fan. The value must be above 0 and no higher than the fan's maximum, which is shown
-  next to the field.
+  next to the field. Tick **Return to Auto after … minutes** to run it for a set time; each fan shows the time left,
+  then every fan goes back to Auto. Picking a mode by hand cancels the timer.
 - **Temperature curve**: two charts, CPU and GPU, driven by the average temperature of each.
   - Drag a point to move it.
   - Double-click empty space to add a point; double-click a point to remove it.

@@ -44,6 +44,10 @@ final class AppModel: ObservableObject {
     /// While a preset is on: the mode each fan had before, keyed by fan id, to go back to when it is switched off.
     private var modesBeforePreset: [Int: FanControlMode] = [:]
 
+    /// When a timed fixed speed ends and every fan goes back to Auto, if one is running.
+    @Published private(set) var autoReturnDate: Date?
+    private var autoReturnTimer: Timer?
+
     var isTurbo: Bool {
         preset == .turbo
     }
@@ -57,6 +61,7 @@ final class AppModel: ObservableObject {
     private static let refreshInterval: TimeInterval = 2
     private static let savedModesKey = "savedModes"
     private static let lastCustomModesKey = "lastCustomModes"
+    private static let autoReturnKey = "autoReturnDate"
     private var restoredSavedModes = false
     /// Modes the user just picked that the helper has not acknowledged yet, keyed by fan id.
     private var pendingModes: [Int: FanControlMode] = [:]
@@ -103,6 +108,8 @@ final class AppModel: ObservableObject {
 
     /// Sets the mode the user picked for a fan and remembers it so the next launch restores it.
     func setMode(_ mode: FanControlMode, for fan: Fan) {
+        // Picking a mode by hand replaces any timed run.
+        cancelAutoReturn()
         // Picking a mode ends the preset: the other fans go back to what they had before it.
         if preset != nil {
             preset = nil
@@ -139,6 +146,32 @@ final class AppModel: ObservableObject {
             let rpm = max(fan.maxRPM * preset.fraction, fan.minRPM)
             show(.constant(rpm: Int(rpm)), forFan: fan.id)
         }
+    }
+
+    /// Hands every fan back to Auto once `duration` has passed. Saved, so a relaunch keeps to the same deadline.
+    func returnToAuto(after duration: TimeInterval) {
+        let date = Date().addingTimeInterval(duration)
+        UserDefaults.standard.set(date, forKey: Self.autoReturnKey)
+        scheduleAutoReturn(at: date)
+    }
+
+    private func scheduleAutoReturn(at date: Date) {
+        autoReturnTimer?.invalidate()
+        autoReturnDate = date
+        let timer = Timer(fire: date, interval: 0, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            for fan in self.fans { self.setMode(.auto, for: fan) }
+        }
+        // Common modes, so it still fires while the menu bar menu is open.
+        RunLoop.main.add(timer, forMode: .common)
+        autoReturnTimer = timer
+    }
+
+    private func cancelAutoReturn() {
+        autoReturnTimer?.invalidate()
+        autoReturnTimer = nil
+        autoReturnDate = nil
+        UserDefaults.standard.removeObject(forKey: Self.autoReturnKey)
     }
 
     /// Shows a mode right away and keeps showing it until the helper has taken the request;
@@ -276,6 +309,15 @@ final class AppModel: ObservableObject {
 
     /// Quitting returns the fans to automatic; the next launch reapplies the saved mode to fans still on automatic.
     private func restoreSavedModes(current: [FanControlMode]) {
+        if let date = UserDefaults.standard.object(forKey: Self.autoReturnKey) as? Date {
+            guard date > Date() else {
+                // The timed run ended while the app was closed: the fans stay on Auto.
+                cancelAutoReturn()
+                UserDefaults.standard.removeObject(forKey: Self.savedModesKey)
+                return
+            }
+            scheduleAutoReturn(at: date)
+        }
         for (key, mode) in Self.savedModes() where mode != .auto {
             guard let fanID = Int(key), current.indices.contains(fanID), current[fanID] == .auto else { continue }
             send(mode, toFan: fanID)

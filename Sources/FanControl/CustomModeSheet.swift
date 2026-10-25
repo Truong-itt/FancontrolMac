@@ -12,8 +12,8 @@ struct CustomModeSheet: View {
     /// Every fan on the machine; the fixed-speed tab has one field for each.
     let fans: [Fan]
     let sensors: [SensorReading]
-    /// The mode to set for each fan, keyed by fan id.
-    let onApply: ([Int: FanControlMode]) -> Void
+    /// The mode to set for each fan, keyed by fan id, and how long until the fans go back to Auto (nil: no limit).
+    let onApply: ([Int: FanControlMode], TimeInterval?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var kind: Kind
@@ -23,6 +23,9 @@ struct CustomModeSheet: View {
     @State private var gpuPoints: [CurvePoint]
     // By default one edit applies to every fan, so nothing has to be set up twice.
     @AppStorage(CustomModeSheet.applyToAllKey) private var applyToAll = true
+    // A fixed speed can run for a set time, then hand the fans back to Auto.
+    @AppStorage("timedFixedSpeed") private var timed = false
+    @AppStorage("timedFixedSpeedMinutes") private var minutes = 30
 
     private static let applyToAllKey = "applyToAllFans"
     private static let sharedCurvesKey = "curves.shared"
@@ -30,13 +33,14 @@ struct CustomModeSheet: View {
     private static let cpuSensor = "cpu.avg"
     private static let gpuSensor = "gpu.avg"
     private static let chartHeight: CGFloat = 210
+    private static let minuteRange = 1...1440
     // Default shape: off up to 60°C, then a gradual ramp; RPM is a fraction of the fan's maximum.
     private static let defaultShape: [(temp: Double, fraction: Double)] = [
         (20, 0), (60, 0), (68, 0.45), (72, 0.52), (76, 0.6), (80, 0.7), (84, 0.8), (98, 0.9),
     ]
 
     init(fan: Fan, fans: [Fan], sensors: [SensorReading], modes: [Int: FanControlMode],
-         onApply: @escaping ([Int: FanControlMode]) -> Void) {
+         onApply: @escaping ([Int: FanControlMode], TimeInterval?) -> Void) {
         self.fan = fan
         self.fans = fans
         self.sensors = sensors
@@ -105,6 +109,19 @@ struct CustomModeSheet: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
+                HStack(spacing: 6) {
+                    Toggle("Return to Auto after", isOn: $timed)
+                        .toggleStyle(.checkbox)
+                    TextField("", value: $minutes, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                        .monospacedDigit()
+                        .frame(width: 60)
+                    Stepper("", value: $minutes, in: Self.minuteRange)
+                        .labelsHidden()
+                    Text("minutes")
+                }
+                .frame(maxWidth: .infinity)
             } else {
                 CurveEditor(title: "CPU, RPM/°C", color: Color(red: 0.36, green: 0.68, blue: 0.93),
                             maxRPM: fan.maxRPM,
@@ -138,11 +155,11 @@ struct CustomModeSheet: View {
                     } else {
                         Self.saveFixedSpeeds(modes)
                     }
-                    onApply(modes)
+                    onApply(modes, duration)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(selectedModes == nil)
+                .disabled(selectedModes == nil || (kind == .constant && timed && !Self.minuteRange.contains(minutes)))
             }
         }
         .padding(20)
@@ -151,6 +168,11 @@ struct CustomModeSheet: View {
 
     private var curves: [FanCurve] {
         [FanCurve(sensorID: Self.cpuSensor, points: cpuPoints), FanCurve(sensorID: Self.gpuSensor, points: gpuPoints)]
+    }
+
+    /// How long the fixed speed runs before the fans go back to Auto; curves have no limit.
+    private var duration: TimeInterval? {
+        kind == .constant && timed ? TimeInterval(minutes * 60) : nil
     }
 
     /// The mode for each fan, or nil while a fixed-speed field holds an invalid value.

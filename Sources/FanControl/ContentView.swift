@@ -34,10 +34,11 @@ struct ContentView: View {
         .frame(width: 372)
         .sheet(item: $editingFan) { fan in
             let modes = Dictionary(uniqueKeysWithValues: model.fans.map { ($0.id, model.mode(of: $0)) })
-            CustomModeSheet(fan: fan, fans: model.fans, sensors: model.sensors, modes: modes) { chosen in
+            CustomModeSheet(fan: fan, fans: model.fans, sensors: model.sensors, modes: modes) { chosen, duration in
                 for target in model.fans {
                     if let mode = chosen[target.id] { model.setMode(mode, for: target) }
                 }
+                if let duration { model.returnToAuto(after: duration) }
             }
             // Each fan gets its own dialog state instead of reusing another fan's selection.
             .id(fan.id)
@@ -73,6 +74,7 @@ struct ContentView: View {
                 ForEach(model.fans) { fan in
                     FanRow(fan: fan, mode: model.mode(of: fan), error: model.error(of: fan),
                            canControl: model.helperState.canControl, presetOn: model.preset != nil,
+                           autoReturnDate: model.autoReturnDate,
                            onAuto: { model.setMode(.auto, for: fan) },
                            onCustom: { chooseCustom(for: fan) })
                     // Separator between rows only; the table border closes the last one.
@@ -193,6 +195,8 @@ private struct FanRow: View {
     let canControl: Bool
     /// While Medium or Turbo is on neither mode button is highlighted; the preset button is.
     let presetOn: Bool
+    /// When a timed fixed speed hands the fans back to Auto.
+    let autoReturnDate: Date?
     let onAuto: () -> Void
     let onCustom: () -> Void
 
@@ -236,6 +240,10 @@ private struct FanRow: View {
 
     private var notice: String? {
         if let error { return error }
+        if mode != .auto, let autoReturnDate {
+            let minutes = Int((autoReturnDate.timeIntervalSinceNow / 60).rounded(.up))
+            return minutes > 1 ? "Auto in \(minutes) min" : "Auto in under a minute"
+        }
         return mode == .auto && fan.manual ? "Controlled by another app" : nil
     }
 
