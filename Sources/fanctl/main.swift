@@ -7,6 +7,8 @@ Usage:
   fanctl sensors [--all]                     Show sensors (--all: every SMC temperature key)
   fanctl set <fan|all> auto                  Return the fan to automatic
   fanctl set <fan|all> <rpm>                 Hold a fixed speed
+  fanctl set <fan|all> medium                Run at 50% of the fan's maximum speed
+  fanctl set <fan|all> max                   Run at 100% (the fan's maximum speed)
   fanctl set <fan|all> sensor <id> <t1> <t2>
                                              Follow a sensor: minimum RPM at t1°C, maximum at t2°C
   fanctl read <key>...                       Read raw SMC keys (e.g. F0Md F0Tg Ftst)
@@ -94,7 +96,11 @@ case "read":
     }
 
 case "set":
-    guard arguments.count >= 3, let mode = parseMode(Array(arguments.dropFirst(2))) else { fail(usage) }
+    // A share of each fan's maximum, for the presets that depend on the fan.
+    let fraction: Double? = arguments.count == 3 ? ["medium": 0.5, "max": 1][arguments[2]] : nil
+    guard arguments.count >= 3, let requested = fraction != nil ? .auto : parseMode(Array(arguments.dropFirst(2))) else {
+        fail(usage)
+    }
     let fans: [Int]
     if arguments[1] == "all" {
         fans = Array(0..<smc.fanCount())
@@ -104,7 +110,13 @@ case "set":
         fail(usage)
     }
     do {
+        let limits = smc.fans()
         for fan in fans {
+            guard fraction == nil || limits.indices.contains(fan) else { fail("There is no fan \(fan)") }
+            var mode = requested
+            if let fraction {
+                mode = .constant(rpm: Int(max(limits[fan].maxRPM * fraction, limits[fan].minRPM)))
+            }
             _ = try HelperClient.send(.set(fan: fan, mode: mode))
             print("Fan \(fan): \(describe(mode))")
         }

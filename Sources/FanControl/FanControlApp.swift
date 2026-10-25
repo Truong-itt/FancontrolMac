@@ -95,6 +95,14 @@ struct MenuBarContent: View {
             openWindow(id: "main")
             NSApp.activate(ignoringOtherApps: true)
         }
+        Button(model.preset == .medium ? "Turn Medium Off" : "Medium (All Fans at 50%)") {
+            model.toggle(.medium)
+        }
+        .disabled(!model.helperState.canControl)
+        Button(model.isTurbo ? "Turn Turbo Off" : "Turbo (All Fans at 100%)") {
+            model.toggleTurbo()
+        }
+        .disabled(!model.helperState.canControl)
         Button("Set All Fans to Auto") {
             for fan in model.fans { model.setMode(.auto, for: fan) }
         }

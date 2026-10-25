@@ -51,12 +51,19 @@ struct ContentView: View {
             HStack {
                 Text("Fan").frame(width: Self.nameColumnWidth, alignment: .leading)
                 Text("Speed").frame(maxWidth: .infinity)
-                Text("Control").frame(width: Self.controlColumnWidth)
+                HStack(spacing: 6) {
+                    presetButton(.medium, title: "Medium", icon: "gauge.medium", tint: .blue, help: "Run all fans at 50%")
+                    presetButton(.turbo, title: "Turbo", icon: "bolt.fill", tint: .orange, help: "Run all fans at 100%")
+                }
+                .controlSize(.small)
+                .disabled(!model.helperState.canControl || model.fans.isEmpty)
+                .fixedSize()
+                .frame(width: Self.controlColumnWidth, alignment: .trailing)
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.vertical, 5)
             Divider()
             if model.fans.isEmpty {
                 Text("No fans found")
@@ -65,7 +72,7 @@ struct ContentView: View {
             } else {
                 ForEach(model.fans) { fan in
                     FanRow(fan: fan, mode: model.mode(of: fan), error: model.error(of: fan),
-                           canControl: model.helperState.canControl,
+                           canControl: model.helperState.canControl, presetOn: model.preset != nil,
                            onAuto: { model.setMode(.auto, for: fan) },
                            onCustom: { chooseCustom(for: fan) })
                     // Separator between rows only; the table border closes the last one.
@@ -77,10 +84,28 @@ struct ContentView: View {
         .overlay(Rectangle().stroke(Color(nsColor: .separatorColor)))
     }
 
+    /// Runs every fan at the preset's speed while on; pressing it again goes back to the previous modes.
+    @ViewBuilder
+    private func presetButton(_ preset: FanPreset, title: String, icon: String, tint: Color,
+                              help: String) -> some View {
+        let label = Label(title, systemImage: icon)
+        Group {
+            if model.preset == preset {
+                Button { model.toggle(preset) } label: { label }
+                    .buttonStyle(.borderedProminent)
+                    .tint(tint)
+            } else {
+                Button { model.toggle(preset) } label: { label }
+                    .buttonStyle(.bordered)
+            }
+        }
+        .help(help)
+    }
+
     /// Custom on a fan that is on auto switches straight back to its last custom mode; pressing it
     /// again (or with nothing remembered yet) opens the dialog to edit.
     private func chooseCustom(for fan: Fan) {
-        if model.mode(of: fan) == .auto, let last = model.lastCustomMode(for: fan) {
+        if model.preset != nil || model.mode(of: fan) == .auto, let last = model.lastCustomMode(for: fan) {
             model.setMode(last, for: fan)
         } else {
             editingFan = fan
@@ -166,6 +191,8 @@ private struct FanRow: View {
     let mode: FanControlMode
     let error: String?
     let canControl: Bool
+    /// While Medium or Turbo is on neither mode button is highlighted; the preset button is.
+    let presetOn: Bool
     let onAuto: () -> Void
     let onCustom: () -> Void
 
@@ -196,8 +223,8 @@ private struct FanRow: View {
             .frame(maxWidth: .infinity)
 
             HStack(spacing: 6) {
-                modeButton("Auto", active: mode == .auto, action: onAuto)
-                modeButton("Custom", active: mode != .auto, action: onCustom)
+                modeButton("Auto", active: !presetOn && mode == .auto, action: onAuto)
+                modeButton("Custom", active: !presetOn && mode != .auto, action: onCustom)
             }
             .disabled(!canControl)
             .fixedSize()

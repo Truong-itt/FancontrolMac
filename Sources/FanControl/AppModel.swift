@@ -11,6 +11,19 @@ enum HelperState: Equatable {
     var canControl: Bool { self == .connected }
 }
 
+enum FanPreset {
+    case medium
+    case turbo
+
+    /// Share of each fan's maximum speed.
+    var fraction: Double {
+        switch self {
+        case .medium: return 0.5
+        case .turbo: return 1
+        }
+    }
+}
+
 final class AppModel: ObservableObject {
     @Published var fans: [Fan] = []
     @Published var sensors: [SensorReading] = []
@@ -24,6 +37,15 @@ final class AppModel: ObservableObject {
     /// True while the helper is forcing at least one fan (fixed speed or curve).
     var isControlling: Bool {
         modes.contains { $0 != .auto }
+    }
+
+    /// The preset running every fan at a share of its maximum (Medium or Turbo), if one is on.
+    @Published private(set) var preset: FanPreset?
+    /// While a preset is on: the mode each fan had before, keyed by fan id, to go back to when it is switched off.
+    private var modesBeforePreset: [Int: FanControlMode] = [:]
+
+    var isTurbo: Bool {
+        preset == .turbo
     }
 
     // All SMC and socket work runs on this queue so it never blocks the UI.
@@ -81,13 +103,50 @@ final class AppModel: ObservableObject {
 
     /// Sets the mode the user picked for a fan and remembers it so the next launch restores it.
     func setMode(_ mode: FanControlMode, for fan: Fan) {
+        // Picking a mode ends the preset: the other fans go back to what they had before it.
+        if preset != nil {
+            preset = nil
+            for other in fans where other.id != fan.id {
+                show(modesBeforePreset[other.id] ?? .auto, forFan: other.id)
+            }
+        }
         Self.remember(mode, forFan: fan.id, key: Self.savedModesKey)
         if mode != .auto { Self.remember(mode, forFan: fan.id, key: Self.lastCustomModesKey) }
-        // Show the choice right away and keep showing it until the helper has taken the request;
-        // the actual switch carries on underneath and may take a few seconds.
-        pendingModes[fan.id] = mode
-        if modes.indices.contains(fan.id) { modes[fan.id] = mode }
-        send(mode, toFan: fan.id)
+        show(mode, forFan: fan.id)
+    }
+
+    func toggleTurbo() {
+        toggle(.turbo)
+    }
+
+    /// A preset runs every fan at its share of the maximum right away; switching it off returns each fan to its
+    /// previous mode. Switching from one preset to the other keeps the modes from before the first one.
+    /// It is deliberately not remembered: quitting, or the next launch, goes back to the saved modes.
+    func toggle(_ preset: FanPreset) {
+        if self.preset == preset {
+            self.preset = nil
+            for fan in fans {
+                show(modesBeforePreset[fan.id] ?? .auto, forFan: fan.id)
+            }
+            return
+        }
+        if self.preset == nil {
+            modesBeforePreset = Dictionary(uniqueKeysWithValues: fans.map { ($0.id, mode(of: $0)) })
+        }
+        self.preset = preset
+        for fan in fans {
+            // Never ask for less than the fan's minimum, which some fans keep above half their maximum.
+            let rpm = max(fan.maxRPM * preset.fraction, fan.minRPM)
+            show(.constant(rpm: Int(rpm)), forFan: fan.id)
+        }
+    }
+
+    /// Shows a mode right away and keeps showing it until the helper has taken the request;
+    /// the actual switch carries on underneath and may take a few seconds.
+    private func show(_ mode: FanControlMode, forFan fanID: Int) {
+        pendingModes[fanID] = mode
+        if modes.indices.contains(fanID) { modes[fanID] = mode }
+        send(mode, toFan: fanID)
     }
 
     /// The custom mode this fan last used, so Custom can switch back to it without opening the dialog.

@@ -10,6 +10,7 @@ extension.
 ## Features
 
 - Live fan speed and CPU/GPU temperatures.
+- **Medium** / **Turbo**: one click runs every fan at 50% / 100%; click again to go back to what you had.
 - **Fixed speed**: type an RPM for each fan.
 - **Temperature curve**: draw RPM/°C curves for CPU and GPU; the fan follows whichever asks for more.
 - A point at **OFF** stops the fan completely.
@@ -48,6 +49,10 @@ Each fan has two buttons:
 - **Auto** hands the fan back to macOS.
 - **Custom** switches the fan to its last custom mode. Click it again while it is active to open the editor.
 
+The **Medium** and **Turbo** buttons above them run every fan at 50% or 100% of its maximum speed straight away. Click
+the lit one again to return each fan to the mode it had before; picking Auto or Custom on a fan also ends it. Neither
+is remembered across quits.
+
 The editor has two tabs:
 
 - **Fixed speed**: one field per fan. The value must be above 0 and no higher than the fan's maximum, which is shown
@@ -73,6 +78,8 @@ auto, closing the window quits the app.
 F="/Applications/Fan Control.app/Contents/Resources/fanctl"
 "$F" status                          # fans, sensors, current modes
 "$F" set all 4000                    # both fans at 4000 RPM
+"$F" set all medium                  # both fans at 50%
+"$F" set all max                     # both fans at 100%
 "$F" set 0 sensor cpu.avg 50 85      # fan 0 ramps linearly with average CPU temperature
 "$F" set all auto
 "$F" sensors --all                   # every SMC temperature key
